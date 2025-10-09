@@ -6,4 +6,4 @@ Run example:
 
 Notes:
 The framework is shown below.
-![alt text](image.png)
+![framework](./framework.png "运行效果")
