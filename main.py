@@ -10,11 +10,11 @@ from models.mlp import MLP
 from train.trainer import train_step
 from train.dynamic_updater import DynamicHighSimUpdater
 from train.attention import SimilarityAttention
-from apg.random_walk import collect_node_patterns
-from apg.build_apg import build_apg, compute_node_distribution
+from anonymous_path.random_walk import collect_node_patterns
+from anonymous_path.build_apg import build_apg, compute_node_distribution
 from utils.similarity import compute_normalized_aggregate
-from utils.data_utils import stratified_split, make_imbalanced_least
-from utils.metrics import evaluate_model, compute_class_acc
+from utils.data_utils import stratified_split, make_imbalanced_least, get_data, pre_dealheterophily
+from utils.metrics import evaluate_model_with_classacc
 import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
 import torch.nn.functional as F
@@ -44,8 +44,9 @@ def main():
     args = get_args()
     set_seed(args.seed)
     device = torch.device(f"{args.device}:0")
-    dataset = Planetoid(root='data/', name=args.dataset)
-    data = dataset[0].to(device)
+    # dataset = Planetoid(root='data/', name=args.dataset)
+    dataset = get_data(args.dataset)
+    data = dataset[0]
 
     # ensure dense features
     try:
@@ -62,6 +63,15 @@ def main():
     data = data.to(device)
     data, minorities = make_imbalanced_least(data, k=k, imbalance_ratio=args.imbalance_ratio, seed=args.seed)
 
+    def compute_structure_homophily(edge_index, labels):
+        src, dst = edge_index
+        same_class = (labels[src] == labels[dst])
+        return same_class.sum().item() / edge_index.size(1)
+
+    initial_homophily = compute_structure_homophily(data.edge_index, data.y)
+    if initial_homophily < 0.5:
+        data = pre_dealheterophily(data, device)
+        print("Pre-dealing heterophily done.")
     # construct initial APG high-sim from anonymous paths on original graph (may be slow)
     G = to_networkx(data, to_undirected=True)
     node_patterns, pattern_set = collect_node_patterns(G, walk_length=args.walk_length, num_walks=args.num_walks)
@@ -86,14 +96,16 @@ def main():
                                  lr=args.lr, weight_decay=args.weight_decay)
 
     new_edge_index = data.edge_index
-    same_means, diff_means = [], []
+
     for epoch in range(1, args.epochs+1):
         sim_high_tensor = torch.tensor(sim_high, device=device).float()
         loss, gcn_model, edge_weight, edge_index, S = train_step(data, sgc_model, gcn_model, att_module, optimizer, sim_high_tensor, new_edge_index, compute_normalized_aggregate, device)
         if epoch % args.print_every == 0:
             print(f"Epoch {epoch}/{args.epochs} Loss={loss:.4f}")
-            results = evaluate_model(gcn_model, data, edge_index, edge_weight)
+            results = evaluate_model_with_classacc(gcn_model, data, edge_index, edge_weight)
             print(f" Train Acc: {results['train_mask']['accuracy']:.4f}, Val Acc: {results['val_mask']['accuracy']:.4f}, Test Acc: {results['test_mask']['accuracy']:.4f}")
+            print(f" Train Macro-F1: {results['train_mask']['macro_f1']:.4f}, Val Macro-F1: {results['val_mask']['macro_f1']:.4f}, Test Macro-F1: {results['test_mask']['macro_f1']:.4f}")
+            print(f" Train BAcc: {results['train_mask']['bacc']:.4f}, Val BAcc: {results['val_mask']['bacc']:.4f}, Test BAcc: {results['test_mask']['bacc']:.4f}")
         # periodic dynamic update (every 10 epochs)
         if epoch % 10 == 0:
             with torch.no_grad():
@@ -104,10 +116,29 @@ def main():
                 dynamic_updater.ema_update(sim_high_dyn)
                 sim_high = dynamic_updater.sim_high.cpu().numpy()
 
-    # final evaluation
-    print('\n=== Final evaluation on test set ===')
-    results = evaluate_model(gcn_model, data, edge_index, edge_weight)
-    print(results)
 
+                logits_sgc = sgc_model(data.x, data.edge_index)
+                probs_sgc = F.softmax(logits_sgc, dim=1)
+                new_edges = list(dynamic_updater.G_dyn.edges())
+                new_edge_index = torch.tensor(new_edges, dtype=torch.long).t().contiguous().to(device)
+                sim_low,N_update = compute_normalized_aggregate(
+                    probs_sgc.detach().cpu().numpy(), new_edge_index.cpu(), data.num_nodes
+                )
+                S_eval, alpha_L, alpha_H = att_module(
+                    torch.Tensor(sim_low).to(device),
+                    torch.Tensor(dynamic_updater.sim_high.float()).to(device)
+                )
+                edge_weight = S_eval[
+                    data.edge_index[0].cpu().numpy(),
+                    data.edge_index[1].cpu().numpy()
+                ]
+
+                results = evaluate_model_with_classacc(gcn_model, data, new_edge_index, edge_weight)  # 返回字典
+                print(f" After dynamic update")
+                print(f" Train Acc: {results['train_mask']['accuracy']:.4f}, Val Acc: {results['val_mask']['accuracy']:.4f}, Test Acc: {results['test_mask']['accuracy']:.4f}")
+                print(f" Train Macro-F1: {results['train_mask']['macro_f1']:.4f}, Val Macro-F1: {results['val_mask']['macro_f1']:.4f}, Test Macro-F1: {results['test_mask']['macro_f1']:.4f}")
+                print(f" Train BAcc: {results['train_mask']['bacc']:.4f}, Val BAcc: {results['val_mask']['bacc']:.4f}, Test BAcc: {results['test_mask']['bacc']:.4f}")
+
+    print(f"class_acc on minorities:{results['test_mask']['class_acc']}")
 if __name__ == '__main__':
     main()
