@@ -1,8 +1,0 @@
-torch
-torch-geometric
-torch-sparse
-numpy
-scipy
-scikit-learn
-networkx
-tqdm
