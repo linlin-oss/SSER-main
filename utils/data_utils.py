@@ -48,6 +48,9 @@ def make_imbalanced_least(data, k=2, imbalance_ratio=0.5, seed=42):
         remove_nodes = random.sample(class_idx.tolist(), num_to_remove)
         train_mask[remove_nodes] = False
         test_mask[remove_nodes] = True
+        
+        print(f"类别 {c}: 原本 {per_class_train}, 移除 {num_to_remove}, 剩余 {per_class_train - num_to_remove}")
+
     data.train_mask = train_mask
     data.test_mask = test_mask
     return data, minority_classes
@@ -109,7 +112,7 @@ def pre_dealheterophily(data, device):
     sorted_idx = np.argsort(degrees)
     low_deg_nodes = sorted_idx[:int(low_ratio * num_nodes)]
     mid_high_nodes = sorted_idx[int(low_ratio * num_nodes):]
-    print(f"低度节点 (前{int(low_ratio*100)}%): {len(low_deg_nodes)}")
+
 
     # === 4. 对低度节点邻边降权 ===
     rows, cols = A.nonzero()
