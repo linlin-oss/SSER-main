@@ -96,14 +96,13 @@ def pre_dealheterophily(data, device):
     new_knn_edge_weight = 1.0
     low_deg_keep_ratio = 0.6
     low_sim_ratio = 0.4
-    low_ratio = 0.2  # 低度节点比例
+    low_ratio = 0.2  
 
     # === 2. 相似度计算（GPU） ===
     X = data.x.to_dense().to(device)
     X_norm = F.normalize(X, p=2, dim=1)
     cos_sim = torch.matmul(X_norm, X_norm.T)  # 余弦相似度矩阵（GPU）
 
-    # === 3. 计算节点度并划分 ===
     edge_index = data.edge_index
     num_nodes = data.num_nodes
     A = to_scipy_sparse_matrix(edge_index, num_nodes=num_nodes).tolil()
@@ -114,7 +113,6 @@ def pre_dealheterophily(data, device):
     mid_high_nodes = sorted_idx[int(low_ratio * num_nodes):]
 
 
-    # === 4. 对低度节点邻边降权 ===
     rows, cols = A.nonzero()
     rows = np.array(rows)
     cols = np.array(cols)
@@ -135,7 +133,6 @@ def pre_dealheterophily(data, device):
             A[i, j] = low_deg_edge_weight
             A[j, i] = low_deg_edge_weight
 
-    # === 5. 对中高节点执行低相似度邻边降权 ===
     mid_high_mask = np.ones(num_nodes, dtype=bool)
     mid_high_mask[low_deg_nodes] = False
     low_deg_mask_bool = ~mid_high_mask
@@ -155,7 +152,6 @@ def pre_dealheterophily(data, device):
         k = max(1, int(low_sim_ratio * len(sims)))
         low_sim_idx = np.argsort(sims)[:k]
         for j in np.array(nbrs)[low_sim_idx]:
-            # 若邻居是低度节点且权重非 1，则跳过
             if low_deg_mask_bool[j] and A[i, j] != 1.0:
                 continue
             rows_to_update.append(i)
