@@ -52,10 +52,10 @@ def train_step(data, sgc_model, gcn_model, att_module, optimizer, sim_high, new_
 
     # reg: reconstruct adjacency from logits (simple MSE)
     import numpy as np
-    adj_reconstructed = torch.tensor(__import__('sklearn').metrics.pairwise.cosine_similarity(logits_gcn.detach().cpu().numpy()), device=device)
-    row, col = data.edge_index
-    A = torch.sparse_coo_tensor(indices=torch.stack([row, col]), values=torch.ones(row.size(0), device=device), size=(data.num_nodes, data.num_nodes)).to_dense()
-    loss_reg = F.mse_loss(adj_reconstructed, A)
-    loss = loss_sgc + loss_gcn + 0.5 * loss_reg
+    # adj_reconstructed = torch.tensor(__import__('sklearn').metrics.pairwise.cosine_similarity(logits_gcn.detach().cpu().numpy()), device=device)
+    # row, col = data.edge_index
+    # A = torch.sparse_coo_tensor(indices=torch.stack([row, col]), values=torch.ones(row.size(0), device=device), size=(data.num_nodes, data.num_nodes)).to_dense()
+    # loss_reg = F.mse_loss(adj_reconstructed, A)
+    loss = loss_sgc + loss_gcn
     loss.backward(); optimizer.step()
     return loss.item(), gcn_model, edge_weight, edge_index, S
