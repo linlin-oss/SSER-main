@@ -8,17 +8,6 @@ Notes:
 The framework is shown below.
 ![framework](./image.png "运行效果")
 
-
-# Model-Master: Full Reproducible Project
-
-This repository provides the full reproducible implementation of **Model-Master**.
-
-## Run Example
-
-```bash
-python main.py --dataset blogcatalog --epochs 100 --lr 5e-3 --imbalance_ratio 0.9
-```
-
 ## Citation
 
 If you find this project useful, please consider citing our paper:
